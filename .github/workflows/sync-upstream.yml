@@ -12,9 +12,23 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Sync main from upstream
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPSTREAM: LordixDemon/apple_watch_connector
+      - name: Checkout fork main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Merge upstream main
         run: |
-          gh repo sync "$GITHUB_REPOSITORY" --source "$UPSTREAM" --branch main --force
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/LordixDemon/apple_watch_connector.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date with upstream."
+            exit 0
+          fi
+          git merge --no-edit upstream/main
+          git push origin HEAD:main
