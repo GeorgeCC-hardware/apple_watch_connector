@@ -7,19 +7,13 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Generation-scoped coordinator for a fresh Ultra 2 setup.
+ * Generation-scoped coordinator for a fresh Watch NetworkRelay setup.
  *
  * <p>This class owns no PIN, OOB key, Bluetooth UUID, IDS key, or pairing
  * session identifier. Secret-bearing stores and transports act on the
  * returned commands and report only success/failure events back here.</p>
  */
 final class AppleWatchSetupCoordinator {
-    static final String ULTRA_2_PRODUCT_TYPE =
-            "Watch7,5";
-    static final long ULTRA_2_CHIP_ID =
-            0x8310L;
-    static final String ULTRA_2_DEFAULT_MODEL_NUMBER =
-            "A2986";
     static final String PAIRING_SESSION_ID_CAPABILITY =
             "0b75afac-6373-41d2-a4f3-d4c1e9295a07";
 
@@ -79,6 +73,7 @@ final class AppleWatchSetupCoordinator {
     private Phase phase =
             Phase.IDLE;
     private int advertisedPairingVersion = -1;
+    private WatchPairingIdentity targetIdentity;
 
     private boolean authDataReady;
     private boolean networkRelayComplete;
@@ -111,7 +106,7 @@ final class AppleWatchSetupCoordinator {
     private boolean pairingSessionNeedsSend;
     private boolean pairingSessionSendInFlight;
 
-    synchronized List<Action> beginUltra2Generation(
+    synchronized List<Action> beginGeneration(
             long newGeneration,
             WatchSetupMetadataCodec.Identifier identifier,
             WatchSetupMetadataCodec.ExtendedMetadata metadata) {
@@ -120,15 +115,33 @@ final class AppleWatchSetupCoordinator {
                     "Pairing generation must be positive");
         }
         if (!WatchSetupMetadataCodec
-                .isUltra2NetworkRelayCandidate(
+                .isNetworkRelayCandidate(
                         identifier,
                         metadata,
                         NanoRegistryClassDCodec
-                                .IOS_26_6_ULTRA2_PHONE_MIN_VERSION,
+                                .IOS_26_6_PHONE_MIN_VERSION,
                         NanoRegistryClassDCodec
                                 .IOS_26_6_PHONE_MAX_VERSION)) {
             throw new IllegalArgumentException(
-                    "Candidate is not a compatible Ultra 2 NetworkRelay setup");
+                    "Unsupported Watch NetworkRelay setup: product="
+                            + (metadata == null ? "unknown" : metadata.productType())
+                            + ", pairingVersion=" + (metadata == null ? -1 : metadata.pairingVersion)
+                            + ", supportedVersion=" + NanoRegistryClassDCodec.IOS_26_6_PHONE_MIN_VERSION
+                            + ".." + NanoRegistryClassDCodec.IOS_26_6_PHONE_MAX_VERSION);
+        }
+        return beginGeneration(newGeneration, new WatchPairingIdentity(metadata), metadata.pairingVersion);
+    }
+
+    synchronized List<Action> beginRestoredGeneration(long newGeneration, String storedProductType,
+            int observedPairingVersion) {
+        NanoRegistryClassDCodec.PairingModeRequest.modernIos26_6(
+                NanoRegistryClassDCodec.COMPATIBILITY_STATE_CHECK, observedPairingVersion);
+        return beginGeneration(newGeneration, new WatchPairingIdentity(storedProductType), observedPairingVersion);
+    }
+
+    private List<Action> beginGeneration(long newGeneration, WatchPairingIdentity identity, int pairingVersion) {
+        if (newGeneration <= 0) {
+            throw new IllegalArgumentException("Pairing generation must be positive");
         }
         if (phase != Phase.IDLE
                 && newGeneration < generation) {
@@ -151,8 +164,8 @@ final class AppleWatchSetupCoordinator {
         clearGenerationState();
         generation =
                 newGeneration;
-        advertisedPairingVersion =
-                metadata.pairingVersion;
+        advertisedPairingVersion = pairingVersion;
+        targetIdentity = identity;
         phase =
                 Phase.CANDIDATE_READY;
         actions.add(
@@ -358,15 +371,12 @@ final class AppleWatchSetupCoordinator {
                 eventGeneration)) {
             return List.of();
         }
-        if (!ULTRA_2_PRODUCT_TYPE.equals(
-                productType)
-                || runtimeModelNumber == null
-                || runtimeModelNumber.isBlank()
-                || chipId != ULTRA_2_CHIP_ID
-                || capabilities == null
+        if (capabilities == null
                 || !containsCapability(
                         capabilities,
-                        PAIRING_SESSION_ID_CAPABILITY)) {
+                        PAIRING_SESSION_ID_CAPABILITY)
+                || targetIdentity == null
+                || !targetIdentity.acceptSnapshot(productType, runtimeModelNumber, chipId)) {
             return fail(
                     Failure.TARGET_IDENTITY_MISMATCH);
         }
@@ -633,7 +643,7 @@ final class AppleWatchSetupCoordinator {
                 idsMaxPairingVersion == null
                         || (idsMaxPairingVersion
                         >= NanoRegistryClassDCodec
-                        .IOS_26_6_ULTRA2_PHONE_MIN_VERSION
+                        .IOS_26_6_PHONE_MIN_VERSION
                         && idsMaxPairingVersion
                         <= NanoRegistryClassDCodec
                         .IOS_26_6_PHONE_MAX_VERSION);
@@ -749,6 +759,7 @@ final class AppleWatchSetupCoordinator {
 
     private void clearGenerationState() {
         advertisedPairingVersion = -1;
+        targetIdentity = null;
         authDataReady = false;
         networkRelayComplete = false;
         localPairingStoreRequested = false;
@@ -872,7 +883,7 @@ final class AppleWatchSetupCoordinator {
             }
             return NanoRegistryClassDCodec
                     .PairingModeRequest
-                    .modernIos26_6Ultra2(
+                    .modernIos26_6(
                             compatibilityState,
                             runtimeWatchPairingVersion);
         }

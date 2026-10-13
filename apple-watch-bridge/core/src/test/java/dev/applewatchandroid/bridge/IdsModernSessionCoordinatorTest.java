@@ -165,7 +165,7 @@ public final class IdsModernSessionCoordinatorTest {
             try (var start = phone.coordinator.startControl(); var ignored = pump(phone, watch, start)) { }
             try (var start = phone.coordinator.startInitialLane(NanoRegistryPropertyCodec.CLASS_D_SERVICE);
                  var ignored = pump(phone, watch, start)) { }
-            var check = NanoRegistryClassDCodec.PairingModeRequest.modernIos26_6Ultra2(1, 25);
+            var check = NanoRegistryClassDCodec.PairingModeRequest.modernIos26_6(1, 25);
             try (var sent = phone.coordinator.sendClassD(check); var delivered = pump(phone, watch, sent)) {
                 assertEquals(1, captured.size());
                 var decoded = (IdsSocketPairCodec.ProtobufMessage) IdsSocketPairCodec.decode(captured.get(0));
@@ -992,6 +992,8 @@ public final class IdsModernSessionCoordinatorTest {
                      phone();
              Side watch =
                      watch()) {
+            assertEquals(null, phone.coordinator.observedPeerMaxPairingVersion());
+            assertEquals(null, watch.coordinator.observedPeerMaxPairingVersion());
             try (IdsModernSessionCoordinator.Output started =
                          phone.coordinator.startControl();
                  PumpResult control =
@@ -1017,6 +1019,8 @@ public final class IdsModernSessionCoordinatorTest {
                     phone);
             assertControlReady(
                     watch);
+            assertEquals(Integer.valueOf(26), phone.coordinator.observedPeerMaxPairingVersion());
+            assertEquals(Integer.valueOf(26), watch.coordinator.observedPeerMaxPairingVersion());
             assertEquals(
                     26,
                     phone.coordinator
@@ -1128,7 +1132,7 @@ public final class IdsModernSessionCoordinatorTest {
             NanoRegistryClassDCodec.PairingModeRequest pairingMode =
                     NanoRegistryClassDCodec
                             .PairingModeRequest
-                            .modernIos26_6Ultra2(
+                            .modernIos26_6(
                                     NanoRegistryClassDCodec
                                             .COMPATIBILITY_STATE_CONFIGURE,
                                     25);

@@ -675,6 +675,11 @@ final class NormalLinkIdsSessionBridge
         return ids.effectivePeerMaxPairingVersion();
     }
 
+    Integer observedPeerMaxPairingVersion() {
+        if (ids == null) return null;
+        return ids.observedPeerMaxPairingVersion();
+    }
+
     NormalLinkPipeSession.Phase normalLinkPhase() {
         requireUsable();
         return normalLink.phase();

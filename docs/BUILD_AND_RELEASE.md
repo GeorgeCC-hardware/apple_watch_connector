@@ -15,8 +15,8 @@ logs and saved-pair updates. This document covers candidate auditing and signing
 
 ## Candidate versions and support
 
-Current source versions: Companion `1.0.85+86`, Android Bridge `0.2.427` (code
-`627`), shared Rust crates `0.1.1`. These components have independent version
+Current source versions: Companion `1.0.86+87`, Android Bridge `0.2.429` (code
+`629`), shared Rust crates `0.1.1`. These components have independent version
 numbers; publish the exact tested combination and its Git revision together.
 The current status is **experimental release candidate**, not a stable 1.0
 support promise. Changes awaiting a candidate are in [CHANGELOG](../CHANGELOG.md).
@@ -176,9 +176,9 @@ export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$HOME=/build"
 (cd apple-watch-bridge && ./gradlew :app:assembleRelease)
 bash apple-watch-bridge/tool/build_magisk_module.sh \
   apple-watch-bridge/app/build/outputs/apk/release/app-release.apk \
-  apple-watch-bridge/build/apple-watch-bridge-magisk-0.2.427.zip
+  apple-watch-bridge/build/apple-watch-bridge-magisk-0.2.429.zip
 python3 -m unittest discover -s tools -p 'test_magisk_module.py'
-shasum -a 256 apple-watch-bridge/build/apple-watch-bridge-magisk-0.2.427.zip
+shasum -a 256 apple-watch-bridge/build/apple-watch-bridge-magisk-0.2.429.zip
 ```
 
 The Rust remap removes local home-directory paths from compiled diagnostics;

@@ -13,12 +13,38 @@ import java.util.Set;
 
 public final class AppleWatchSetupCoordinatorTest {
     @Test
+    public void replacementGenerationUsesItsOwnModelAndCannotKeepOldIdentity() {
+        var coordinator = new AppleWatchSetupCoordinator();
+        coordinator.beginGeneration(1, physicalIdentifier(), physicalMetadata());
+        coordinator.onFullWatchClassCSnapshot(1, "Watch7,5", "First SKU", 0x8310, capabilities());
+        assertTrue(coordinator.snapshot().identityValidated);
+
+        var replacement = WatchSetupMetadataCodec.decodeExtendedMetadata(
+                WatchSetupMetadataCodec.encodeExtendedMetadata(25, 6, 18, false, 0x001a0200L, null));
+        coordinator.beginGeneration(2, physicalIdentifier(), replacement);
+        assertFalse(coordinator.snapshot().identityValidated);
+        assertTrue(coordinator.onFullWatchClassCSnapshot(1, "Watch7,5", "First SKU", 0x8310, capabilities()).isEmpty());
+        coordinator.onFullWatchClassCSnapshot(2, "Watch6,18", "Second SKU", 0x8301, capabilities());
+        assertTrue(coordinator.snapshot().identityValidated);
+        var failure = coordinator.onFullWatchClassCSnapshot(2, "Watch6,18", "Second SKU", 0x8310, capabilities());
+        assertEquals(AppleWatchSetupCoordinator.Failure.TARGET_IDENTITY_MISMATCH, failure.get(0).failure);
+    }
+
+    @Test
+    public void authenticatedProductMustMatchTheSelectedAdvertisement() {
+        var coordinator = new AppleWatchSetupCoordinator();
+        coordinator.beginGeneration(1, physicalIdentifier(), physicalMetadata());
+        var failure = coordinator.onFullWatchClassCSnapshot(1, "Watch6,18", "Observed SKU", 0x8301, capabilities());
+        assertEquals(AppleWatchSetupCoordinator.Failure.TARGET_IDENTITY_MISMATCH, failure.get(0).failure);
+    }
+
+    @Test
     public void freshUltra2FlowJoinsIndependentGatesAndUsesRuntime25() {
         AppleWatchSetupCoordinator coordinator =
                 new AppleWatchSetupCoordinator();
 
         assertTypes(
-                coordinator.beginUltra2Generation(
+                coordinator.beginGeneration(
                         1,
                         physicalIdentifier(),
                         physicalMetadata()),
@@ -130,7 +156,7 @@ public final class AppleWatchSetupCoordinatorTest {
     public void atomicFullSnapshotSkipsOptionalCheckState() {
         AppleWatchSetupCoordinator coordinator =
                 new AppleWatchSetupCoordinator();
-        coordinator.beginUltra2Generation(
+        coordinator.beginGeneration(
                 2,
                 physicalIdentifier(),
                 physicalMetadata());
@@ -163,7 +189,7 @@ public final class AppleWatchSetupCoordinatorTest {
     public void earlyReadinessEventsCannotBypassIdsSequence() {
         AppleWatchSetupCoordinator coordinator =
                 new AppleWatchSetupCoordinator();
-        coordinator.beginUltra2Generation(
+        coordinator.beginGeneration(
                 3,
                 physicalIdentifier(),
                 physicalMetadata());
@@ -206,7 +232,7 @@ public final class AppleWatchSetupCoordinatorTest {
     public void staleGenerationCannotAdvanceReplacement() {
         AppleWatchSetupCoordinator coordinator =
                 new AppleWatchSetupCoordinator();
-        coordinator.beginUltra2Generation(
+        coordinator.beginGeneration(
                 10,
                 physicalIdentifier(),
                 physicalMetadata());
@@ -214,7 +240,7 @@ public final class AppleWatchSetupCoordinatorTest {
                 10);
 
         assertTypes(
-                coordinator.beginUltra2Generation(
+                coordinator.beginGeneration(
                         11,
                         physicalIdentifier(),
                         physicalMetadata()),
@@ -252,7 +278,7 @@ public final class AppleWatchSetupCoordinatorTest {
     public void type10PersistsBeforeSendAndRetriesWithoutRotation() {
         AppleWatchSetupCoordinator coordinator =
                 new AppleWatchSetupCoordinator();
-        coordinator.beginUltra2Generation(
+        coordinator.beginGeneration(
                 20,
                 physicalIdentifier(),
                 physicalMetadata());
@@ -330,7 +356,7 @@ public final class AppleWatchSetupCoordinatorTest {
     public void existingPairingSessionIdSuppressesGeneration() {
         AppleWatchSetupCoordinator coordinator =
                 new AppleWatchSetupCoordinator();
-        coordinator.beginUltra2Generation(
+        coordinator.beginGeneration(
                 21,
                 physicalIdentifier(),
                 physicalMetadata());
@@ -360,7 +386,7 @@ public final class AppleWatchSetupCoordinatorTest {
     public void identityAndImperativeOrderFailClosed() {
         AppleWatchSetupCoordinator wrongIdentity =
                 new AppleWatchSetupCoordinator();
-        wrongIdentity.beginUltra2Generation(
+        wrongIdentity.beginGeneration(
                 30,
                 physicalIdentifier(),
                 physicalMetadata());
@@ -371,7 +397,7 @@ public final class AppleWatchSetupCoordinatorTest {
                         30,
                         "Watch7,5",
                         "Runtime-model",
-                        0x007b,
+                        0,
                         capabilities());
         assertEquals(
                 AppleWatchSetupCoordinator.Failure
@@ -380,7 +406,7 @@ public final class AppleWatchSetupCoordinatorTest {
 
         AppleWatchSetupCoordinator wrongOrder =
                 new AppleWatchSetupCoordinator();
-        wrongOrder.beginUltra2Generation(
+        wrongOrder.beginGeneration(
                 31,
                 physicalIdentifier(),
                 physicalMetadata());
@@ -410,7 +436,7 @@ public final class AppleWatchSetupCoordinatorTest {
                                                 false,
                                                 0x001a_0600L,
                                                 null));
-        coordinator.beginUltra2Generation(
+        coordinator.beginGeneration(
                 40,
                 physicalIdentifier(),
                 metadata26);
@@ -444,7 +470,7 @@ public final class AppleWatchSetupCoordinatorTest {
                 new AppleWatchSetupCoordinator();
         AppleWatchSetupCoordinator.Action start =
                 only(
-                        coordinator.beginUltra2Generation(
+                        coordinator.beginGeneration(
                                 50,
                                 physicalIdentifier(),
                                 physicalMetadata()));

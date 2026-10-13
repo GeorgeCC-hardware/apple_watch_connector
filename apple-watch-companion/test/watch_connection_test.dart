@@ -80,6 +80,25 @@ void main() {
     },
   );
   test(
+    'Ultra 1 identity is displayed without assuming Ultra 2 hardware',
+    () async {
+      await observe({
+        'hasPair': true,
+        'pairId': 'ultra-first-generation',
+        'productType': 'Watch6,18',
+        'connected': true,
+        'operationalEligible': true,
+        'batteryLevel': 51,
+      });
+      expect(connection.state.modelName, 'Apple Watch Ultra');
+      expect(bridge.currentDevice.modelIdentifier, 'Watch6,18');
+      expect(bridge.currentDevice.name, 'Apple Watch Ultra');
+      expect(bridge.currentDevice.caseSize, '49 mm');
+      expect(bridge.currentDevice.batteryLevel, 51);
+    },
+  );
+
+  test(
     'Disconnected saved identity remains selectable without showing connected telemetry',
     () async {
       await observe({

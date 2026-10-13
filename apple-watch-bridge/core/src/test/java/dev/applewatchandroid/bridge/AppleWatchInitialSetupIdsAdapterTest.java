@@ -13,6 +13,51 @@ import java.util.List;
 import java.util.UUID;
 
 public final class AppleWatchInitialSetupIdsAdapterTest {
+    @Test public void restoredPairUsesStoredModelAndObservedVersionWithoutAnAdvertisement() {
+        for (String product : new String[]{"Watch6,18", "Watch7,5", "Watch99,1"}) {
+            try (var adapter = new AppleWatchInitialSetupIdsAdapter(1, product, 25)) {
+                adapter.startAfterIdsDataReady();
+                var snapshot = watchSnapshot(true, product, 0x8301);
+                try {
+                    adapter.acceptClassC(snapshot);
+                    assertTrue(adapter.snapshot().identityValidated);
+                    assertTrue(adapter.snapshot().transportCompletionIssued);
+                    assertEquals(25, adapter.snapshot().advertisedPairingVersion);
+                } finally { snapshot.destroy(); }
+            }
+        }
+    }
+
+    @Test public void restoredPairRejectsAnotherAuthenticatedModel() {
+        try (var adapter = new AppleWatchInitialSetupIdsAdapter(1, "Watch6,18", 25)) {
+            adapter.startAfterIdsDataReady();
+            var snapshot = watchSnapshot(true, "Watch7,5", 0x8310);
+            try {
+                assertThrows(IllegalStateException.class, () -> adapter.acceptClassC(snapshot));
+                assertFalse(adapter.snapshot().identityValidated);
+                assertEquals(AppleWatchSetupCoordinator.Phase.FAILED, adapter.snapshot().phase);
+            } finally { snapshot.destroy(); }
+        }
+    }
+
+    @Test public void authenticatedSnapshotsCompleteSetupForAnyAdvertisedModel() {
+        for (int[] model : new int[][]{{6, 18}, {7, 5}, {7, 1}, {99, 1}}) {
+            var metadata = WatchSetupMetadataCodec.decodeExtendedMetadata(
+                    WatchSetupMetadataCodec.encodeExtendedMetadata(25, model[0], model[1], false, 0x001a0200L, null));
+            var adapter = new AppleWatchInitialSetupIdsAdapter(1,
+                    WatchSetupMetadataCodec.decodeIdentifier(hexBytes("8693f4ce")), metadata, 25);
+            adapter.startAfterIdsDataReady();
+            String product = metadata.productType();
+            long chip = model[0] == 7 && model[1] == 5 ? 0x8310 : 0x8301;
+            var snapshot = watchSnapshot(true, product, chip);
+            try {
+                adapter.acceptClassC(snapshot);
+                assertTrue(adapter.snapshot().identityValidated);
+                assertTrue(adapter.snapshot().transportCompletionIssued);
+            } finally { snapshot.destroy(); adapter.close(); }
+        }
+    }
+
     @Test public void explicitArrayFlagIsNotMistakenForAnAbsentLocaleProperty() {
         // Native protobuf field 8=false means NSArray, not an unset property.
         byte[] wire = java.util.HexFormat.of().parseHex(

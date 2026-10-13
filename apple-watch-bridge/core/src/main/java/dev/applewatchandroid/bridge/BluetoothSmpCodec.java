@@ -99,6 +99,16 @@ final class BluetoothSmpCodec {
         };
     }
 
+    static int parseSecurityRequest(byte[] pdu) {
+        requireOpcodeAndLength(pdu, SECURITY_REQUEST, 2);
+        int authentication = unsigned(pdu[1]);
+        if ((authentication & 0xc2) != 0) {
+            throw new IllegalArgumentException(
+                    "SMP Security Request has invalid authentication requirements");
+        }
+        return authentication;
+    }
+
     static int parsePairingFailure(byte[] pdu) {
         requireOpcodeAndLength(
                 pdu,

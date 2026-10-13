@@ -1115,10 +1115,16 @@ final class IdsModernSessionCoordinator
      * phone-side NanoRegistry device-property updater.</p>
      */
     synchronized int effectivePeerMaxPairingVersion() {
+        Integer observed = observedPeerMaxPairingVersion();
+        return observed == null ? (int) IosCompanionProfile26_6.PAIRING_PROTOCOL_VERSION : observed;
+    }
+
+    /** Setup must use observed peer evidence instead of the local phone's fallback version. */
+    synchronized Integer observedPeerMaxPairingVersion() {
         requireUsable();
         if (control == null
                 || !control.remoteHelloReceived()) {
-            return (int) IosCompanionProfile26_6.PAIRING_PROTOCOL_VERSION;
+            return null;
         }
         IdsControlChannelSession.RemoteHello remote =
                 control.remoteHello();
@@ -1128,7 +1134,7 @@ final class IdsModernSessionCoordinator
                         : remote.maxCompatibilityVersion;
         if (effective <= 0
                 || effective > 0xffff) {
-            return (int) IosCompanionProfile26_6.PAIRING_PROTOCOL_VERSION;
+            return null;
         }
         return (int) effective;
     }

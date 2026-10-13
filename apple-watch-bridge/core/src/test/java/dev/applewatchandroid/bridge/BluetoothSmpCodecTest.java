@@ -38,6 +38,24 @@ public final class BluetoothSmpCodecTest {
     }
 
     @Test
+    public void parsesSecurityRequestWithoutRequiringOurFeatureResponse() {
+        for (int auth : new int[]{0, 1, 0x05, 0x09, 0x0d, 0x2d}) {
+            assertEquals(auth, BluetoothSmpCodec.parseSecurityRequest(
+                    new byte[]{0x0b, (byte) auth}));
+        }
+    }
+
+    @Test
+    public void rejectsMalformedAndReservedSecurityRequestValues() {
+        for (byte[] pdu : new byte[][]{
+                {}, {0x0b}, {0x0b, 1, 0}, {0x02, 1},
+                {0x0b, 2}, {0x0b, 3}, {0x0b, 0x40}, {0x0b, (byte) 0x80}}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> BluetoothSmpCodec.parseSecurityRequest(pdu));
+        }
+    }
+
+    @Test
     public void rejectsMalformedPairingResponseAndBuildsFailure() {
         assertThrows(
                 IllegalArgumentException.class,

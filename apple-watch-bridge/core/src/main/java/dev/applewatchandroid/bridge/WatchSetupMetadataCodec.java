@@ -6,7 +6,7 @@ import java.util.Locale;
 /**
  * Bit-exact Watch Setup identifier and extended-metadata codec.
  *
- * <p>The current Ultra 2 advertisement carries a four-byte identifier and at
+ * <p>The supported setup advertisement carries a four-byte identifier and at
  * least seven metadata bytes. Metadata may grow in a later watchOS release,
  * so decoded objects retain the complete input instead of truncating it.</p>
  */
@@ -15,8 +15,6 @@ final class WatchSetupMetadataCodec {
     static final int CURRENT_METADATA_LENGTH = 7;
 
     static final int NETWORK_RELAY_PAIRING_STRATEGY = 4;
-    static final int ULTRA_2_PRODUCT_MAJOR = 7;
-    static final int ULTRA_2_PRODUCT_MINOR = 5;
 
     private static final char[] INTEGER_ALPHABET =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890"
@@ -191,24 +189,25 @@ final class WatchSetupMetadataCodec {
         return packed;
     }
 
-    static boolean isUltra2NetworkRelayCandidate(
-            Identifier identifier,
-            ExtendedMetadata metadata,
-            int minimumPairingVersion,
-            int maximumPairingVersion) {
+    /** Discovery describes the peer; compatibility is checked by the setup coordinator. */
+    static boolean isNetworkRelayAdvertisement(Identifier identifier, ExtendedMetadata metadata) {
         return identifier != null
                 && metadata != null
                 && identifier.pairingStrategy
                 == NETWORK_RELAY_PAIRING_STRATEGY
-                && metadata.productVersionMajor
-                == ULTRA_2_PRODUCT_MAJOR
-                && metadata.productVersionMinor
-                == ULTRA_2_PRODUCT_MINOR
-                && metadata.pairingVersion
-                >= minimumPairingVersion
-                && metadata.pairingVersion
-                <= maximumPairingVersion
+                && metadata.productVersionMajor > 0
+                && metadata.pairingVersion > 0
                 && metadata.hasCanonicalPadding;
+    }
+
+    static boolean isNetworkRelayCandidate(
+            Identifier identifier,
+            ExtendedMetadata metadata,
+            int minimumPairingVersion,
+            int maximumPairingVersion) {
+        return isNetworkRelayAdvertisement(identifier, metadata)
+                && metadata.pairingVersion >= minimumPairingVersion
+                && metadata.pairingVersion <= maximumPairingVersion;
     }
 
     private static void requireRange(

@@ -54,7 +54,7 @@ Linux now exposes Bluetooth adapter selection in All Watches, remembers the
 address across HCI index changes and requires reselection when saved hardware
 is missing. See [adapter selection](docs/LINUX_ADAPTER_SELECTION_94.md).
 
-> **Documentation snapshot: October 9, 2026.** The main verified hardware is Apple Watch Ultra 2, `Watch7,5`, watchOS `26.2 / 23S303`. Source versions: Bridge **0.2.427 / code 627**, Companion **1.0.85+86**, Rust workspace **0.1.1**. Source versions do not establish installed device versions. Android camera pairing, Linux pairing on Mint 22.3 and Windows pairing on Windows 10 / Realtek `0bda:b00e` have separate hardware verification.
+> **Documentation snapshot: October 13, 2026.** The main verified hardware is Apple Watch Ultra 2, `Watch7,5`, watchOS `26.2 / 23S303`. Source versions: Bridge **0.2.429 / code 629**, Companion **1.0.86+87**, Rust workspace **0.1.1**. Source versions do not establish installed device versions. Android camera pairing, Linux pairing on Mint 22.3 and Windows pairing on Windows 10 / Realtek `0bda:b00e` have separate hardware verification.
 
 Development is ongoing. The hardware journal confirms camera pairing, activation, and a visible Watch face. Full Watch.app parity, every iPhone feature, and compatibility with every Apple Watch model remain incomplete. macOS discovery is implemented; the complete physical pairing → activation → IDS path is unfinished.
 
@@ -1624,7 +1624,7 @@ Rust-бэкенд Linux разделён на состояние, ввод/за�
 используют строгие lockfiles; Linux-архив проверяется по manifest schema 2 и
 получает воспроизводимые метаданные. См. [этап 93](docs/REFACTOR_RELEASE_93.md).
 
-> **Срез документации: 9 октября 2026.** Проверяемый основной стенд — Apple Watch Ultra 2, `Watch7,5`, watchOS `26.2 / 23S303`. Версии в исходниках: Bridge **0.2.427 / code 627**, Companion **1.0.85+86**, Rust workspace **0.1.1**. Версия исходников не доказывает установленную на устройстве версию. Camera pairing на Android, сопряжение на Linux Mint 22.3 и Windows 10 / Realtek `0bda:b00e` имеют отдельные физические проверки.
+> **Срез документации: 13 октября 2026.** Проверяемый основной стенд — Apple Watch Ultra 2, `Watch7,5`, watchOS `26.2 / 23S303`. Версии в исходниках: Bridge **0.2.429 / code 629**, Companion **1.0.86+87**, Rust workspace **0.1.1**. Версия исходников не доказывает установленную на устройстве версию. Camera pairing на Android, сопряжение на Linux Mint 22.3 и Windows 10 / Realtek `0bda:b00e` имеют отдельные физические проверки.
 
 Проект находится в разработке. Физическое сопряжение через камеру, активация и видимый циферблат подтверждены в журнале стенда; полная замена Watch.app, всех функций iPhone и всех моделей Apple Watch ещё не достигнута. Для macOS обнаружение реализовано, но полный физический путь pairing → activation → IDS остаётся незавершённым.
 

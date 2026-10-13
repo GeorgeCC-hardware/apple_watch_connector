@@ -39,7 +39,7 @@ final class WindowsBluetoothController implements BluetoothController, AutoClose
                 if (closing) return;
                 transportFailure = failure;
                 ProtocolHost.log("WINDOWS HCI FAILED: " + failure.getMessage());
-                callbacks.initializationComplete(-1);
+                callbacks.transportFailed(failure);
             }
         }, "windows-hci-read");
         reader.setDaemon(true);

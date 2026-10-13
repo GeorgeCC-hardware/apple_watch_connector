@@ -39,6 +39,11 @@ final class HalTransportSession {
     private final java.util.ArrayDeque<Packet> deferredControllerPackets = new java.util.ArrayDeque<>();
     private final BlockingQueue<byte[]> deferredSmpPdus =
             new LinkedBlockingQueue<>(16);
+    private static final String PAIRING_FINAL_ACK_LABEL =
+            "PAIRING PRIVATE-NOTIFIES WATCH-REQUEST ACK";
+    private long finalPairingAckAtMs = -1;
+    private long smpRequestSubmittedAtMs = -1;
+    private int pairingSmpReceived;
     private volatile CountDownLatch initializationLatch = new CountDownLatch(1);
     private final AtomicInteger initializationStatus =
             new AtomicInteger(-1);
@@ -63,6 +68,12 @@ final class HalTransportSession {
                 public void initializationComplete(int status) {
                     initializationStatus.set(status);
                     initializationLatch.countDown();
+                }
+
+                @Override
+                public void transportFailed(IOException failure) {
+                    callbackFailure.compareAndSet(null, failure);
+                    initializationComplete(-1);
                 }
 
                 @Override
@@ -550,8 +561,8 @@ final class HalTransportSession {
                 HciCodec.OPCODE_LE_SET_SCAN_ENABLE,
                 HciCodec.scanEnableParameters(true));
         log("LE SCAN ACTIVE: FE25/subtype 06, "
-                + "target=Watch7,5/NetworkRelay strategy 4, "
-                + "runtime compatibility=25..26, "
+                + "target=any Watch model/NetworkRelay strategy 4, "
+                + "model whitelist=false; compatibility checked during setup, "
                 + "RSSI >= -75 dBm.");
 
         // Only complete Watch setup advertisements can supply the PIN
@@ -960,11 +971,7 @@ final class HalTransportSession {
                         + HciCodec.toHex(packet.bytes));
                 continue;
             }
-            if (l2cap == null
-                    || l2cap.connectionHandle != connectionHandle
-                    || l2cap.destinationCid != HciCodec.TERMINUS_LOCAL_CID) {
-                continue;
-            }
+            if (!retainPairingTerminusPdu(l2cap, "CONTROL IKE_SA_INIT")) continue;
             l2capFrames++;
             log(String.format(
                     Locale.US,
@@ -1371,12 +1378,7 @@ final class HalTransportSession {
                         + HciCodec.toHex(packet.bytes));
                 continue;
             }
-            if (l2cap == null
-                    || l2cap.connectionHandle != connectionHandle
-                    || l2cap.destinationCid
-                    != HciCodec.TERMINUS_LOCAL_CID) {
-                continue;
-            }
+            if (!retainPairingTerminusPdu(l2cap, "CONTROL IKE_INTERMEDIATE")) continue;
             l2capFrames++;
             L2capErtmCodec.Frame ertm;
             try {
@@ -1731,12 +1733,7 @@ final class HalTransportSession {
                         + HciCodec.toHex(packet.bytes));
                 continue;
             }
-            if (l2cap == null
-                    || l2cap.connectionHandle != connectionHandle
-                    || l2cap.destinationCid
-                    != HciCodec.TERMINUS_LOCAL_CID) {
-                continue;
-            }
+            if (!retainPairingTerminusPdu(l2cap, "CONTROL IKE_AUTH")) continue;
             l2capFrames++;
             L2capErtmCodec.Frame ertm;
             try {
@@ -2044,12 +2041,7 @@ final class HalTransportSession {
                         + HciCodec.toHex(packet.bytes));
                 continue;
             }
-            if (l2cap == null
-                    || l2cap.connectionHandle != connectionHandle
-                    || l2cap.destinationCid
-                    != HciCodec.TERMINUS_LOCAL_CID) {
-                continue;
-            }
+            if (!retainPairingTerminusPdu(l2cap, "PIN_METHOD")) continue;
             l2capFrames++;
             L2capErtmCodec.Frame ertm;
             try {
@@ -2849,7 +2841,7 @@ final class HalTransportSession {
                     responderLocalCid,
                     cursor,
                     acknowledgementPackets,
-                    "PAIRING PRIVATE-NOTIFIES WATCH-REQUEST ACK",
+                    PAIRING_FINAL_ACK_LABEL,
                     PAIRING_IKE_ACK_TIMEOUT_MS);
             completeLeSecureConnectionsSmp(
                     localOob,
@@ -3540,7 +3532,7 @@ final class HalTransportSession {
                     log("NORMAL REGISTRATION BARRIER PASS: "
                             + "Class D connected=true, "
                             + "Class C connected=true; physical "
-                            + "Watch7,5 confirmKeysForClass(D/C) "
+                            + "Watch confirmKeysForClass(D/C) "
                             + "prerequisites delivered.");
                     attachModernIdsSession(
                             pipe);
@@ -3641,7 +3633,7 @@ final class HalTransportSession {
                                 log("NORMAL REGISTRATION BARRIER PASS: "
                                         + "Class D connected=true, "
                                         + "Class C connected=true; physical "
-                                        + "Watch7,5 confirmKeysForClass(D/C) "
+                                        + "Watch confirmKeysForClass(D/C) "
                                         + "prerequisites delivered (early IP).");
                                 attachModernIdsSession(
                                         pipe);
@@ -4285,6 +4277,9 @@ final class HalTransportSession {
         if (!idsDeviceInfoExchange.ready()) {
             log("POST-COMMIT IDS CREDENTIALS RESUME: saved mutual exchange retained; current authenticated Hello matches the same Watch and fresh data lanes are ready. Fresh command-12 response remains unobserved.");
         }
+        Integer watchPairingVersion = activeWatchSetupMetadata != null
+                ? activeWatchSetupMetadata.pairingVersion : activeIdsBridge.observedPeerMaxPairingVersion();
+        if (watchPairingVersion == null) return;
         log("COMMIT IS PAIRED AUTHORIZED: activating AppleWatchPostCommitCoordinator "
                 + "and MobileActivationHttpProxy; starting post-commit setup & activation.");
         if (activePairingSessionRecord.state()
@@ -4361,10 +4356,6 @@ final class HalTransportSession {
         activationProxyWorker = new ActivationProxyWorker(activeActivationProxy);
         activePostCommitCoordinator =
                 new AppleWatchPostCommitCoordinator();
-        int watchPairingVersion =
-                activeWatchSetupMetadata != null
-                        ? activeWatchSetupMetadata.pairingVersion
-                        : activeIdsBridge.effectivePeerMaxPairingVersion();
         PairingSessionRecord.DurableState coordinatorStartState = activePairingSessionRecord.state();
         if (coordinatorStartState.wireValue() >= PairingSessionRecord.DurableState.ACTIVATION_CONFIRMED.wireValue()
                 && coordinatorStartState.wireValue() < PairingSessionRecord.DurableState.SETUP_COMPLETE.wireValue()) {
@@ -4626,16 +4617,6 @@ final class HalTransportSession {
             if (activePairingSessionRecord == null) {
                 return false;
             }
-            if (activeWatchSetupIdentifier == null) {
-            activeWatchSetupIdentifier =
-                    WatchSetupMetadataCodec.decodeIdentifier(
-                            WatchSetupMetadataCodec.encodeIdentifier(4, 0, 0, 0));
-        }
-        if (activeWatchSetupMetadata == null) {
-            activeWatchSetupMetadata =
-                    WatchSetupMetadataCodec.decodeExtendedMetadata(
-                            WatchSetupMetadataCodec.encodeExtendedMetadata(25, 7, 5, false, 0, null));
-        }
         byte[] targetAddress = peerConnectionAddress != null ? peerConnectionAddress.clone() : null;
         int targetAddressType = peerConnectionAddressType;
         connectionHandle = -1;
@@ -5006,7 +4987,7 @@ final class HalTransportSession {
                 log("PAIRED NORMAL REGISTRATION BARRIER PASS: "
                         + "Class D connected=true, "
                         + "Class C connected=true; physical "
-                        + "Watch7,5 confirmKeysForClass(D/C) "
+                        + "Watch confirmKeysForClass(D/C) "
                         + "prerequisites delivered.");
                 attachModernIdsSession(
                         pipe);
@@ -5075,7 +5056,7 @@ final class HalTransportSession {
                             log("PAIRED NORMAL REGISTRATION BARRIER PASS: "
                                     + "Class D connected=true, "
                                     + "Class C connected=true; physical "
-                                    + "Watch7,5 confirmKeysForClass(D/C) "
+                                    + "Watch confirmKeysForClass(D/C) "
                                     + "prerequisites delivered (early IP).");
                             attachModernIdsSession(
                                     pipe);
@@ -6997,6 +6978,11 @@ final class HalTransportSession {
                     log("IDS PEER VERSIONS: " + activeIdsBridge.ids().peerVersionSummary()
                             + "; setup advertisement=" + (activeWatchSetupMetadata != null
                             ? activeWatchSetupMetadata.pairingVersion : "unknown"));
+                    if (activeInitialSetup == null && activeIdsBridge.dataLanesReadyForApplication()) {
+                        // Restored setup may have joined data lanes before the Hello
+                        // supplied an observed version. Retry without invented metadata.
+                        pendingNanoSetup = true;
+                    }
                     if (activePairingSessionRecord != null) {
                         log("IDS PEER IDENTITY RELATION: " + activeIdsBridge.ids().peerIdentitySummary(
                                 activePairingSessionRecord.peerIdsDeviceId(),
@@ -7561,8 +7547,6 @@ final class HalTransportSession {
         checkpointIdsDataReady();
         if (activeIdsBridge == null
                 || activePairingSessionRecord == null
-                || activeWatchSetupIdentifier == null
-                || activeWatchSetupMetadata == null
                 || activePairingSessionRecord.state().wireValue()
                 < PairingSessionRecord.DurableState
                 .IDS_DATA_READY.wireValue()) {
@@ -7570,16 +7554,16 @@ final class HalTransportSession {
                     "Initial NanoRegistry setup evidence is incomplete");
         }
         try {
-            int peerMaxPairingVersion = activeIdsBridge.idsSnapshot().peerHelloReceived
-                    ? activeIdsBridge.effectivePeerMaxPairingVersion()
-                    : activeWatchSetupMetadata.pairingVersion;
-            AppleWatchInitialSetupIdsAdapter adapter =
-                    new AppleWatchInitialSetupIdsAdapter(
-                            activePairingSessionRecord
-                                    .transitionCounter(),
-                            activeWatchSetupIdentifier,
-                            activeWatchSetupMetadata,
-                            peerMaxPairingVersion);
+            Integer observedVersion = activeIdsBridge.observedPeerMaxPairingVersion();
+            boolean advertised = activeWatchSetupIdentifier != null && activeWatchSetupMetadata != null;
+            if (!advertised && observedVersion == null) return List.of();
+            int peerMaxPairingVersion = observedVersion != null
+                    ? observedVersion : activeWatchSetupMetadata.pairingVersion;
+            AppleWatchInitialSetupIdsAdapter adapter = advertised
+                    ? new AppleWatchInitialSetupIdsAdapter(activePairingSessionRecord.transitionCounter(),
+                            activeWatchSetupIdentifier, activeWatchSetupMetadata, peerMaxPairingVersion)
+                    : new AppleWatchInitialSetupIdsAdapter(activePairingSessionRecord.transitionCounter(),
+                            activePairingSessionRecord.peerProductType(), peerMaxPairingVersion);
             List<AppleWatchInitialSetupIdsAdapter.Action> actions =
                     adapter.startAfterIdsDataReady();
             activeInitialSetup =
@@ -8217,8 +8201,8 @@ final class HalTransportSession {
             initialPropertiesReceived = true;
             log("INITIAL PROPERTIES CHECKPOINT PASS: full Watch "
                     + "Class-C snapshot atomically validated "
-                    + "ProductType=Watch7,5, non-empty ModelNumber, "
-                    + "ChipID=0x8310 and PairingSessionID capability; "
+                    + "ProductType matches selected advertisement, "
+                    + "authenticated ModelNumber/ChipID and PairingSessionID capability; "
                     + "Configure sent; IsPaired/activation attempted=false; "
                     + "property values/UUIDs logged=false.");
         } finally {
@@ -9187,8 +9171,10 @@ final class HalTransportSession {
                         == connectionHandle
                         && l2cap.destinationCid
                         == BluetoothSmpCodec.FIXED_CID) {
-                    deferredSmpPdus.offer(
-                            l2cap.payload.clone());
+                    try { deferPairingSmp(l2cap.payload, "SMP encryption change"); }
+                    finally { wipe(l2cap.payload); }
+                } else if (l2cap != null) {
+                    wipe(l2cap.payload);
                 }
                 continue;
             }
@@ -9353,70 +9339,156 @@ final class HalTransportSession {
             long timeoutMs,
             String label)
             throws Exception {
-        byte[] deferred =
-                deferredSmpPdus.poll();
-        if (deferred != null) {
-            try {
-                return validateExpectedSmpPdu(
-                        deferred,
-                        expectedOpcode,
-                        label);
-            } finally {
-                wipe(deferred);
-            }
-        }
         long deadline =
                 BridgeClock.elapsedRealtime() + timeoutMs;
+        int securityRequests = 0;
+        log("SMP WAIT BEGIN: " + label + "; " + pairingSmpDiagnostics());
         while (BridgeClock.elapsedRealtime() < deadline) {
-            Packet packet;
-            try {
-                packet = nextPacket(deadline);
-            } catch (TimeoutException complete) {
-                break;
-            }
-            if (packet.kind == PacketKind.EVENT) {
-                HciCodec.DisconnectionComplete disconnected =
-                        HciCodec.parseDisconnectionComplete(
-                                packet.bytes);
-                if (disconnected != null
-                        && disconnected.connectionHandle
-                        == connectionHandle) {
-                    connectionHandle = -1;
-                    throw new HostException(String.format(
-                            Locale.US,
-                            "Watch disconnected while awaiting %s; "
-                                    + "status=0x%02X reason=0x%02X",
-                            label,
-                            disconnected.status,
-                            disconnected.reason));
+            checkStop();
+            Throwable callbackError = callbackFailure.get();
+            if (callbackError != null) throw new HostException("Bluetooth controller transport failed", callbackError);
+            byte[] payload = deferredSmpPdus.poll();
+            if (payload == null) {
+                Packet packet;
+                try {
+                    packet = nextPacket(deadline);
+                } catch (TimeoutException complete) {
+                    break;
                 }
-                continue;
+                try {
+                    if (packet.kind == PacketKind.EVENT) {
+                        failIfPairingDisconnected(packet, label);
+                        continue;
+                    }
+                    HciCodec.L2capPdu l2cap;
+                    try {
+                        l2cap = aclReassembler.accept(packet.bytes);
+                    } catch (IllegalArgumentException error) {
+                        log(label + " ACL DROP: " + error.getMessage());
+                        continue;
+                    }
+                    if (l2cap == null) continue;
+                    if (l2cap.connectionHandle != connectionHandle
+                            || l2cap.destinationCid != BluetoothSmpCodec.FIXED_CID) {
+                        wipe(l2cap.payload);
+                        continue;
+                    }
+                    payload = l2cap.payload;
+                    recordPairingSmpRx(payload, label);
+                } finally { wipe(packet.bytes); }
             }
-            HciCodec.L2capPdu l2cap;
             try {
-                l2cap = aclReassembler.accept(packet.bytes);
-            } catch (IllegalArgumentException error) {
-                log(label + " ACL DROP: "
-                        + error.getMessage());
-                continue;
-            }
-            if (l2cap == null
-                    || l2cap.connectionHandle
-                    != connectionHandle
-                    || l2cap.destinationCid
-                    != BluetoothSmpCodec.FIXED_CID) {
-                continue;
-            }
-            return validateExpectedSmpPdu(
-                    l2cap.payload,
-                    expectedOpcode,
-                    label);
+                if (expectedOpcode == BluetoothSmpCodec.PAIRING_RESPONSE
+                        && payload.length > 0
+                        && (payload[0] & 255) == BluetoothSmpCodec.SECURITY_REQUEST) {
+                    final int authentication;
+                    try {
+                        authentication = BluetoothSmpCodec.parseSecurityRequest(payload);
+                    } catch (IllegalArgumentException malformed) {
+                        throw new HostException("Malformed SMP Security Request", malformed);
+                    }
+                    if (++securityRequests > 16) {
+                        throw new HostException("Too many SMP Security Requests while awaiting " + label);
+                    }
+                    // The central's Pairing Request is already in flight. A peripheral
+                    // Security Request is a trigger, not the feature response. Keep the
+                    // original deadline and never start a second pairing procedure.
+                    log(String.format(Locale.US,
+                            "SMP SECURITY REQUEST RX: auth=0x%02X count=%d; "
+                                    + "Pairing Request already submitted; resend=false; deadline unchanged.",
+                            authentication, securityRequests));
+                    continue;
+                }
+                return validateExpectedSmpPdu(payload, expectedOpcode, label);
+            } finally { wipe(payload); }
         }
         throw new HostException(
                 label
                         + " timed out after "
                         + timeoutMs
-                        + " ms");
+                        + " ms; securityRequests=" + securityRequests
+                        + "; " + pairingSmpDiagnostics());
+    }
+
+    private void recordPairingSmpRx(byte[] payload, String phase) {
+        pairingSmpReceived++;
+        log(String.format(Locale.US,
+                "SMP RX: phase=%s cid=0x%04X opcode=0x%02X bytes=%d received=%d; payload bytes logged=false.",
+                phase, BluetoothSmpCodec.FIXED_CID,
+                payload.length == 0 ? -1 : payload[0] & 255,
+                payload.length, pairingSmpReceived));
+    }
+
+    private void deferPairingSmp(byte[] payload, String phase) throws HostException {
+        recordPairingSmpRx(payload, phase);
+        byte[] copy = payload.clone();
+        if (!deferredSmpPdus.offer(copy)) {
+            wipe(copy);
+            throw new HostException("SMP deferred queue overflow during " + phase
+                    + "; " + pairingSmpDiagnostics());
+        }
+        log("SMP RX DEFERRED: phase=" + phase + " queued=" + deferredSmpPdus.size()
+                + "; retained until SMP waiter; payload bytes logged=false.");
+    }
+
+    private void clearDeferredSmpPdus() {
+        byte[] payload;
+        while ((payload = deferredSmpPdus.poll()) != null) wipe(payload);
+    }
+
+    private boolean retainPairingTerminusPdu(HciCodec.L2capPdu l2cap, String phase) throws HostException {
+        if (l2cap == null) return false;
+        if (l2cap.connectionHandle == connectionHandle
+                && l2cap.destinationCid == HciCodec.TERMINUS_LOCAL_CID) return true;
+        try {
+            if (l2cap.connectionHandle == connectionHandle
+                    && l2cap.destinationCid == BluetoothSmpCodec.FIXED_CID) {
+                deferPairingSmp(l2cap.payload, phase);
+            }
+        } finally { wipe(l2cap.payload); }
+        return false;
+    }
+
+    private String pairingSmpDiagnostics() {
+        long now = BridgeClock.elapsedRealtime();
+        return "finalIkeAckAgeMs=" + (finalPairingAckAtMs < 0 ? -1 : now - finalPairingAckAtMs)
+                + " requestSubmittedAgeMs=" + (smpRequestSubmittedAtMs < 0 ? -1 : now - smpRequestSubmittedAtMs)
+                + " received=" + pairingSmpReceived + " deferred=" + deferredSmpPdus.size()
+                + " controllerAcl={" + aclCredits.summary() + "}; payload bytes logged=false";
+    }
+
+    private void failIfPairingDisconnected(Packet packet, String phase) throws HostException {
+        HciCodec.DisconnectionComplete disconnected = HciCodec.parseDisconnectionComplete(packet.bytes);
+        if (disconnected != null && disconnected.connectionHandle == connectionHandle) {
+            String diagnostics = pairingSmpDiagnostics();
+            connectionHandle = -1;
+            clearDeferredSmpPdus();
+            throw new HostException(String.format(Locale.US,
+                    "Watch disconnected during %s; status=0x%02X reason=0x%02X; %s",
+                    phase, disconnected.status, disconnected.reason, diagnostics));
+        }
+    }
+
+    /** Preserve fixed-channel traffic that races the final authenticated IKE ACK. */
+    private HciCodec.L2capPdu awaitPairingTerminusPdu(long deadline, String phase) throws Exception {
+        while (BridgeClock.elapsedRealtime() < deadline) {
+            Packet packet = nextPacket(deadline);
+            try {
+                if (packet.kind == PacketKind.EVENT) {
+                    failIfPairingDisconnected(packet, phase);
+                    continue;
+                }
+                HciCodec.L2capPdu l2cap;
+                try {
+                    l2cap = aclReassembler.accept(packet.bytes);
+                } catch (IllegalArgumentException malformed) {
+                    log(phase + " ACL DROP: " + malformed.getMessage());
+                    continue;
+                }
+                if (retainPairingTerminusPdu(l2cap, phase)) return l2cap;
+            } finally { wipe(packet.bytes); }
+        }
+        throw new TimeoutException("Pairing Terminus packet deadline elapsed");
     }
 
     private byte[] validateExpectedSmpPdu(
@@ -9444,8 +9516,9 @@ final class HalTransportSession {
             throw new HostException(String.format(
                     Locale.US,
                     "Watch returned SMP Pairing Failed "
-                            + "reason=0x%02X while awaiting %s",
+                            + "reason=0x%02X (%s) while awaiting %s",
                     reason,
+                    BluetoothSmpCodec.pairingFailureReasonName(reason),
                     label));
         }
         if (opcode != expectedOpcode) {
@@ -9538,44 +9611,11 @@ final class HalTransportSession {
         long deadline =
                 BridgeClock.elapsedRealtime() + timeoutMs;
         while (BridgeClock.elapsedRealtime() < deadline) {
-            Packet packet;
-            try {
-                packet = nextPacket(deadline);
-            } catch (TimeoutException complete) {
-                break;
-            }
-            if (packet.kind == PacketKind.EVENT) {
-                HciCodec.DisconnectionComplete disconnected =
-                        HciCodec.parseDisconnectionComplete(
-                                packet.bytes);
-                if (disconnected != null
-                        && disconnected.connectionHandle
-                        == connectionHandle) {
-                    connectionHandle = -1;
-                    throw new HostException(String.format(
-                            Locale.US,
-                            "Watch disconnected during %s; "
-                                    + "status=0x%02X reason=0x%02X",
-                            label,
-                            disconnected.status,
-                            disconnected.reason));
-                }
-                continue;
-            }
             HciCodec.L2capPdu l2cap;
             try {
-                l2cap = aclReassembler.accept(packet.bytes);
-            } catch (IllegalArgumentException error) {
-                log(label + " ACL DROP: "
-                        + error.getMessage());
-                continue;
-            }
-            if (l2cap == null
-                    || l2cap.connectionHandle
-                    != connectionHandle
-                    || l2cap.destinationCid
-                    != HciCodec.TERMINUS_LOCAL_CID) {
-                continue;
+                l2cap = awaitPairingTerminusPdu(deadline, label);
+            } catch (TimeoutException complete) {
+                break;
             }
             L2capErtmCodec.Frame ertm;
             try {
@@ -9590,7 +9630,7 @@ final class HalTransportSession {
                                 + " ERTM acknowledgement: "
                                 + error.getMessage(),
                         error);
-            }
+            } finally { wipe(l2cap.payload); }
             if (ertm.requestSequence
                     == expectedAcknowledgement) {
                 log(String.format(
@@ -9598,6 +9638,10 @@ final class HalTransportSession {
                         "%s ACK PASS: ReqSeq=%d.",
                         label,
                         ertm.requestSequence));
+                if (PAIRING_FINAL_ACK_LABEL.equals(label)) {
+                    finalPairingAckAtMs = BridgeClock.elapsedRealtime();
+                    log("SMP HANDOFF: final IKE transport ACK received; " + pairingSmpDiagnostics());
+                }
                 return new PairingTransportCursor(
                         expectedAcknowledgement,
                         expectedWatchTxSequence);
@@ -9718,43 +9762,11 @@ final class HalTransportSession {
         long deadline =
                 BridgeClock.elapsedRealtime() + timeoutMs;
         while (BridgeClock.elapsedRealtime() < deadline) {
-            Packet packet;
-            try {
-                packet = nextPacket(deadline);
-            } catch (TimeoutException complete) {
-                break;
-            }
-            if (packet.kind == PacketKind.EVENT) {
-                HciCodec.DisconnectionComplete disconnected =
-                        HciCodec.parseDisconnectionComplete(
-                                packet.bytes);
-                if (disconnected != null
-                        && disconnected.connectionHandle
-                        == connectionHandle) {
-                    connectionHandle = -1;
-                    throw new HostException(String.format(
-                            Locale.US,
-                            "Watch disconnected during %s; "
-                                    + "status=0x%02X reason=0x%02X",
-                            label,
-                            disconnected.status,
-                            disconnected.reason));
-                }
-                continue;
-            }
             HciCodec.L2capPdu l2cap;
             try {
-                l2cap = aclReassembler.accept(packet.bytes);
-            } catch (IllegalArgumentException error) {
-                log(label + " ACL DROP: "
-                        + error.getMessage());
-                continue;
-            }
-            if (l2cap == null
-                    || l2cap.connectionHandle != connectionHandle
-                    || l2cap.destinationCid
-                    != HciCodec.TERMINUS_LOCAL_CID) {
-                continue;
+                l2cap = awaitPairingTerminusPdu(deadline, label);
+            } catch (TimeoutException complete) {
+                break;
             }
             l2capFrames++;
             L2capErtmCodec.Frame ertm;
@@ -9770,7 +9782,7 @@ final class HalTransportSession {
                                 + " ERTM frame: "
                                 + error.getMessage(),
                         error);
-            }
+            } finally { wipe(l2cap.payload); }
             if (ertm.requestSequence
                     > expectedRequestSequence) {
                 throw new HostException(
@@ -10148,22 +10160,6 @@ final class HalTransportSession {
             offset += 1 + len;
         }
         return false;
-    }
-
-    private static WatchSetupMetadataCodec.Identifier defaultWatchSetupIdentifier() {
-        byte[] raw = WatchSetupMetadataCodec.encodeIdentifier(4, 0x12345, 0x01, 0x01);
-        return WatchSetupMetadataCodec.decodeIdentifier(raw);
-    }
-
-    private static WatchSetupMetadataCodec.ExtendedMetadata defaultWatchSetupMetadata() {
-        byte[] raw = WatchSetupMetadataCodec.encodeExtendedMetadata(
-                25,
-                7,
-                5,
-                false,
-                0x1A000000L,
-                new byte[0]);
-        return WatchSetupMetadataCodec.decodeExtendedMetadata(raw);
     }
 
     private HciCodec.LeConnectionComplete awaitConnectionComplete(
@@ -11077,6 +11073,13 @@ final class HalTransportSession {
                 }
             }
 
+            if (cid == BluetoothSmpCodec.FIXED_CID && payload.length > 0
+                    && (payload[0] & 255) == BluetoothSmpCodec.PAIRING_REQUEST) {
+                smpRequestSubmittedAtMs = BridgeClock.elapsedRealtime();
+                log("SMP REQUEST SUBMITTED: transport write returned; peer receipt unconfirmed; "
+                        + pairingSmpDiagnostics());
+            }
+
         } finally { fragments.forEach(HalTransportSession::wipe); }
         long now = BridgeClock.elapsedRealtime();
         if (now - lastAclCreditStatusMs >= 10_000) {
@@ -11227,6 +11230,7 @@ final class HalTransportSession {
                     if (disconnected != null && disconnected.connectionHandle == connectionHandle) {
                         fixedChannelRouter.reset();
                         normalAttServer.reset();
+                        clearDeferredSmpPdus();
                     }
                 }
                 return packet;
@@ -11249,6 +11253,10 @@ final class HalTransportSession {
                 aclReassembler.reset();
                 fixedChannelRouter.reset();
                 normalAttServer.reset();
+                clearDeferredSmpPdus();
+                finalPairingAckAtMs = -1;
+                smpRequestSubmittedAtMs = -1;
+                pairingSmpReceived = 0;
                 log("PAIRED TO FRESH: previous HCI connection is closed; new connection may start.");
                 return;
             }
@@ -11485,13 +11493,7 @@ final class HalTransportSession {
             initializedByUs = false;
             packets.clear();
             aclReassembler.reset();
-            byte[] deferredSmp;
-            while ((deferredSmp =
-                    deferredSmpPdus.poll()) != null) {
-                Arrays.fill(
-                        deferredSmp,
-                        (byte) 0);
-            }
+            clearDeferredSmpPdus();
             if (localIdentity != null) {
                 localIdentity.destroy();
                 localIdentity = null;

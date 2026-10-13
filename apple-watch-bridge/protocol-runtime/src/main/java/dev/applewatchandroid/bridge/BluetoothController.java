@@ -12,6 +12,7 @@ interface BluetoothController {
         void initializationComplete(int status);
         void isoDataReceived(byte[] bytes);
         void scoDataReceived(byte[] bytes);
+        default void transportFailed(IOException failure) { initializationComplete(-1); }
     }
     void initialize(Callbacks callbacks) throws IOException;
     void sendHciCommand(byte[] bytes) throws IOException;

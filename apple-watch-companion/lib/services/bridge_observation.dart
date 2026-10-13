@@ -8,6 +8,7 @@ import '../models/phone_find_state.dart';
 import '../models/watch_device.dart';
 import '../models/watch_telemetry.dart';
 import '../models/watch_connection_state.dart';
+import '../models/watch_model_catalog.dart';
 
 /// One connection publication decoded before any of its projections are emitted.
 final class BridgeObservation {
@@ -45,7 +46,9 @@ final class BridgeObservation {
             ? WatchConnectionState.nameForProduct(data['productType'] as String)
             : '—',
         modelIdentifier: data['productType'] as String? ?? '—',
-        caseSize: data['productType'] == 'Watch7,5' ? '49 mm' : '—',
+        caseSize: WatchModelCatalog.caseSizeForProduct(
+          data['productType'] as String? ?? '',
+        ),
         batteryLevel: connected ? data['batteryLevel'] as int? ?? -1 : -1,
         isCharging: connected && data['isCharging'] == true,
         telemetry: WatchTelemetry.fromBridge(data),

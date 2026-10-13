@@ -10,6 +10,32 @@ import org.junit.Test;
 
 public final class WatchSetupMetadataCodecTest {
     @Test
+    public void discoveryIsModelIndependentAndSeparateFromVersionCompatibility() {
+        var identifier = WatchSetupMetadataCodec.decodeIdentifier(
+                WatchSetupMetadataCodec.encodeIdentifier(4, 26943, 19, 14));
+        for (int[] model : new int[][]{{6, 18}, {7, 5}, {7, 1}, {99, 1}}) {
+            for (int version : new int[]{24, 25, 26, 27}) {
+                var metadata = WatchSetupMetadataCodec.decodeExtendedMetadata(
+                        WatchSetupMetadataCodec.encodeExtendedMetadata(
+                                version, model[0], model[1], false, 0x001a0200L, null));
+                assertTrue(WatchSetupMetadataCodec.isNetworkRelayAdvertisement(identifier, metadata));
+                assertEquals(version >= 25 && version <= 26,
+                        WatchSetupMetadataCodec.isNetworkRelayCandidate(identifier, metadata, 25, 26));
+            }
+        }
+        var unknownProduct = WatchSetupMetadataCodec.decodeExtendedMetadata(
+                WatchSetupMetadataCodec.encodeExtendedMetadata(25, 0, 1, false, 0x001a0200L, null));
+        assertFalse(WatchSetupMetadataCodec.isNetworkRelayAdvertisement(identifier, unknownProduct));
+        var unsupportedStrategy = WatchSetupMetadataCodec.decodeIdentifier(
+                WatchSetupMetadataCodec.encodeIdentifier(3, 26943, 19, 14));
+        assertFalse(WatchSetupMetadataCodec.isNetworkRelayAdvertisement(unsupportedStrategy, physicalMetadata()));
+    }
+
+    private static WatchSetupMetadataCodec.ExtendedMetadata physicalMetadata() {
+        return WatchSetupMetadataCodec.decodeExtendedMetadata(hex("64 38 50 00 d0 10 00"));
+    }
+
+    @Test
     public void decodesPhysicalUltra2FixtureBitExactly() {
         WatchSetupMetadataCodec.Identifier identifier =
                 WatchSetupMetadataCodec.decodeIdentifier(
@@ -72,7 +98,7 @@ public final class WatchSetupMetadataCodecTest {
                 metadata.productType());
         assertTrue(
                 WatchSetupMetadataCodec
-                        .isUltra2NetworkRelayCandidate(
+                        .isNetworkRelayCandidate(
                                 identifier,
                                 metadata,
                                 25,
@@ -163,7 +189,7 @@ public final class WatchSetupMetadataCodecTest {
                 identifier.advertisingCode());
         assertTrue(
                 WatchSetupMetadataCodec
-                        .isUltra2NetworkRelayCandidate(
+                        .isNetworkRelayCandidate(
                                 identifier,
                                 metadata,
                                 25,

@@ -927,7 +927,7 @@ public final class NormalLinkPipeSessionTest {
             NanoRegistryClassDCodec.PairingModeRequest pairingMode =
                     NanoRegistryClassDCodec
                             .PairingModeRequest
-                            .modernIos26_6Ultra2(
+                            .modernIos26_6(
                                     NanoRegistryClassDCodec
                                             .COMPATIBILITY_STATE_CONFIGURE,
                                     25);

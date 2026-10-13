@@ -4,6 +4,22 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public final class WatchSetupTargetSelectorTest {
+    @Test
+    public void completeSetupAdvertisementsSelectAllModelsWithoutVersionFiltering() {
+        for (int[] model : new int[][]{{6, 18}, {7, 5}, {7, 1}, {99, 1}}) {
+            for (int version : new int[]{24, 25, 26, 27}) {
+                byte[] data = report(0, 1, true).data.clone();
+                byte[] metadata = WatchSetupMetadataCodec.encodeExtendedMetadata(
+                        version, model[0], model[1], false, 0x001a0200L, null);
+                System.arraycopy(metadata, 0, data, 10, metadata.length);
+                var decoded = new HciCodec.AdvertisingReport(0, 1, new byte[6], -40, data,
+                        HciCodec.parseWatchSetupPayload(data));
+                assertSame(decoded, new WatchSetupTargetSelector().accept(decoded, 0));
+                assertEquals("Watch" + model[0] + "," + model[1], decoded.setup.decodedMetadata.productType());
+            }
+        }
+    }
+
     private static HciCodec.AdvertisingReport report(int type, int peer, boolean setup) {
         byte[] data = setup ? new byte[]{0x10,0x16,0x25,(byte)0xfe,0x06,
                 0x20,(byte)0x86,(byte)0x93,(byte)0xf4,(byte)0xce,0x64,0x38,0x50,0,(byte)0xd0,0x10,0}

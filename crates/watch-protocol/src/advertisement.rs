@@ -72,6 +72,22 @@ mod tests {
         assert_eq!(decoded.pairing_version, 25);
     }
     #[test]
+    fn known_and_future_models_preserve_their_advertised_product() {
+        for (major, minor) in [(6u8, 18u8), (7, 5), (7, 1), (99, 1)] {
+            let mut bytes = FIXTURE;
+            bytes[6] = (25 << 2) | (major >> 5);
+            bytes[7] = ((major & 0x1f) << 3) | (minor >> 4);
+            bytes[8] = ((minor & 0x0f) << 4) | (bytes[8] & 0x0f);
+            let decoded = WatchAdvertisement::from_service_data(&bytes).unwrap();
+            assert_eq!(decoded.product_type(), format!("Watch{major},{minor}"));
+            assert_eq!(decoded.system_version, [26, 2, 0]);
+            assert_eq!(
+                WatchAdvertisement::binding_data(&bytes),
+                Some(bytes[1..].try_into().unwrap())
+            );
+        }
+    }
+    #[test]
     fn explicit_length_and_future_extension_are_bounded() {
         let mut framed = vec![0x86, 12];
         framed.extend_from_slice(&FIXTURE[1..]);

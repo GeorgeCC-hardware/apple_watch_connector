@@ -50,8 +50,8 @@ final class NanoRegistryClassDCodec {
     static final int COMPATIBILITY_STATE_ALT_ACCOUNT = 5;
 
     static final int IOS_26_6_PHONE_MAX_VERSION = 26;
-    static final int WATCHOS_26_6_ULTRA2_VERSION = 26;
-    static final int IOS_26_6_ULTRA2_PHONE_MIN_VERSION = 25;
+    static final int WATCHOS_26_6_REFERENCE_VERSION = 26;
+    static final int IOS_26_6_PHONE_MIN_VERSION = 25;
 
     private static final int WIRE_VARINT = 0;
     private static final int WIRE_FIXED64 = 1;
@@ -1228,28 +1228,28 @@ final class NanoRegistryClassDCodec {
             requireValid();
         }
 
-        static PairingModeRequest modernIos26_6Ultra2(
+        static PairingModeRequest modernIos26_6(
                 int pairingMode) {
-            return modernIos26_6Ultra2(
+            return modernIos26_6(
                     pairingMode,
-                    WATCHOS_26_6_ULTRA2_VERSION);
+                    WATCHOS_26_6_REFERENCE_VERSION);
         }
 
-        static PairingModeRequest modernIos26_6Ultra2(
+        static PairingModeRequest modernIos26_6(
                 int pairingMode,
                 int runtimeWatchPairingVersion) {
             if (runtimeWatchPairingVersion
-                    < IOS_26_6_ULTRA2_PHONE_MIN_VERSION
+                    < IOS_26_6_PHONE_MIN_VERSION
                     || runtimeWatchPairingVersion
                     > IOS_26_6_PHONE_MAX_VERSION) {
                 throw new IllegalArgumentException(
-                        "Ultra 2 runtime pairing version is incompatible");
+                        "Watch runtime pairing version is incompatible");
             }
             return new PairingModeRequest(
                     pairingMode,
                     IOS_26_6_PHONE_MAX_VERSION,
                     runtimeWatchPairingVersion,
-                    IOS_26_6_ULTRA2_PHONE_MIN_VERSION);
+                    IOS_26_6_PHONE_MIN_VERSION);
         }
 
         boolean hasAllVersionMetadata() {
@@ -1258,15 +1258,15 @@ final class NanoRegistryClassDCodec {
                     && phonePairingProtocolVersionMin != null;
         }
 
-        boolean matchesIos26_6Ultra2VersionTuple() {
+        boolean matchesIos26_6VersionTuple() {
             return Integer.valueOf(
                     IOS_26_6_PHONE_MAX_VERSION).equals(
                     phonePairingProtocolVersionMax)
                     && Integer.valueOf(
-                            WATCHOS_26_6_ULTRA2_VERSION).equals(
+                            WATCHOS_26_6_REFERENCE_VERSION).equals(
                             watchPairingProtocolVersion)
                     && Integer.valueOf(
-                            IOS_26_6_ULTRA2_PHONE_MIN_VERSION).equals(
+                            IOS_26_6_PHONE_MIN_VERSION).equals(
                             phonePairingProtocolVersionMin);
         }
 

@@ -8,9 +8,11 @@ final class LinuxBluetoothController implements BluetoothController, AutoCloseab
     private final Path helper;
     private Process process;
     private DataOutputStream output;
+    private volatile boolean closing;
     LinuxBluetoothController(Path helper) { this.helper = helper; }
     public void initialize(Callbacks callbacks) throws IOException {
         if (process != null) throw new IOException("Controller already leased");
+        closing = false;
         String index = System.getProperty("watch.hci", "");
         if (!index.matches("[0-9]{1,5}") || Integer.parseInt(index) >= 65535) throw new IOException("Invalid controller index");
         String expected = System.getProperty("watch.adapter", "");
@@ -44,10 +46,23 @@ final class LinuxBluetoothController implements BluetoothController, AutoCloseab
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt(); release.destroyForcibly(); throw new IOException("Controller release interrupted", interrupted);
         }
-        process = new ProcessBuilder(helper.toString(), index)
-                .redirectError(ProcessBuilder.Redirect.INHERIT).start();
+        process = new ProcessBuilder(helper.toString(), index).start();
         output = new DataOutputStream(process.getOutputStream());
         DataInputStream input = new DataInputStream(process.getInputStream());
+        InputStream diagnostics = process.getErrorStream();
+        Thread diagnosticReader = new Thread(() -> {
+            try (InputStream lines = diagnostics) {
+                String line;
+                while ((line = readBrokerLine(lines)) != null) {
+                    String visible = brokerDiagnostic(line);
+                    if (visible != null) ProtocolHost.log(visible);
+                }
+            } catch (IOException failure) {
+                if (!closing) ProtocolHost.log("LINUX HCI DIAGNOSTIC STREAM CLOSED");
+            }
+        }, "linux-hci-diagnostics");
+        diagnosticReader.setDaemon(true);
+        diagnosticReader.start();
         Thread reader = new Thread(() -> {
             try {
                 while (true) {
@@ -64,12 +79,32 @@ final class LinuxBluetoothController implements BluetoothController, AutoCloseab
                     }
                 }
             } catch (IOException failure) {
+                if (closing) return;
                 ProtocolHost.log("LINUX HCI CLOSED: " + failure.getMessage());
-                callbacks.initializationComplete(-1);
+                callbacks.transportFailed(failure);
             }
         }, "linux-hci-read");
         reader.setDaemon(true);
         reader.start();
+    }
+    static String readBrokerLine(InputStream input) throws IOException {
+        ByteArrayOutputStream line = new ByteArrayOutputStream(256);
+        boolean oversized = false;
+        int value;
+        while ((value = input.read()) != -1) {
+            if (value == '\n') return oversized ? "" : line.toString(java.nio.charset.StandardCharsets.UTF_8);
+            if (line.size() < 256) line.write(value);
+            else oversized = true;
+        }
+        // An interrupted/truncated broker line is not a complete trace record.
+        return null;
+    }
+    static String brokerDiagnostic(String line) {
+        if (line == null || line.length() > 256) return null;
+        // Only the broker's metadata schema enters the journal, never arbitrary
+        // stderr, raw H4 bytes, addresses or secret-bearing SMP/command payloads.
+        if (!line.matches("HCI_BROKER_V1:(TX|RX) (ACL cid=0x[0-9A-F]{4} pb=[0-3] opcode=(0x[0-9A-F]{2}|none)|EVENT code=0x[0-9A-F]{2}|COMMAND opcode=0x[0-9A-F]{4}) bytes=[0-9]{1,5} elapsedMs=[0-9]{1,20}")) return null;
+        return "LINUX " + line;
     }
     static void verifyAdapterAddress(String expected, String report) throws IOException {
         if (!expected.matches("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}") ||
@@ -86,6 +121,7 @@ final class LinuxBluetoothController implements BluetoothController, AutoCloseab
     public void sendHciCommand(byte[] bytes) throws IOException { send(1, bytes); }
     public void sendAclData(byte[] bytes) throws IOException { send(2, bytes); }
     public synchronized void close() throws IOException {
+        closing = true;
         try {
             if (output != null) output.close();
         } finally {

@@ -63,6 +63,7 @@ final class AppleWatchInitialSetupIdsAdapter implements AutoCloseable {
     private final WatchSetupMetadataCodec.Identifier identifier;
     private final WatchSetupMetadataCodec.ExtendedMetadata metadata;
     private final int effectiveRemoteMaxPairingVersion;
+    private final String restoredProductType;
 
     private boolean started;
     private boolean closed;
@@ -92,6 +93,20 @@ final class AppleWatchInitialSetupIdsAdapter implements AutoCloseable {
         this.metadata = metadata;
         this.effectiveRemoteMaxPairingVersion =
                 effectiveRemoteMaxPairingVersion;
+        restoredProductType = null;
+    }
+
+    /** Restored pair identity comes from sealed storage, version from the current authenticated Hello. */
+    AppleWatchInitialSetupIdsAdapter(long generation, String storedProductType, int observedPairingVersion) {
+        if (generation <= 0) {
+            throw new IllegalArgumentException("Pairing generation must be positive");
+        }
+        new WatchPairingIdentity(storedProductType);
+        this.generation = generation;
+        identifier = null;
+        metadata = null;
+        restoredProductType = storedProductType;
+        effectiveRemoteMaxPairingVersion = observedPairingVersion;
     }
 
     synchronized List<Action> startAfterIdsDataReady() {
@@ -101,10 +116,10 @@ final class AppleWatchInitialSetupIdsAdapter implements AutoCloseable {
         started = true;
 
         requireOnly(
-                coordinator.beginUltra2Generation(
-                        generation,
-                        identifier,
-                        metadata),
+                restoredProductType == null
+                        ? coordinator.beginGeneration(generation, identifier, metadata)
+                        : coordinator.beginRestoredGeneration(generation, restoredProductType,
+                                effectiveRemoteMaxPairingVersion),
                 AppleWatchSetupCoordinator.ActionType
                         .START_NETWORK_RELAY_AUTH);
         requireEmpty(
@@ -946,7 +961,7 @@ final class AppleWatchInitialSetupIdsAdapter implements AutoCloseable {
             }
             return NanoRegistryClassDCodec
                     .PairingModeRequest
-                    .modernIos26_6Ultra2(
+                    .modernIos26_6(
                             compatibilityState,
                             runtimeWatchPairingVersion);
         }

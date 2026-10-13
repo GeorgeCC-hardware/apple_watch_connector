@@ -18,7 +18,7 @@ public final class NanoRegistryClassDCodecTest {
     public void ultra2ModernPairingModeMatchesIndependentWireVector() {
         NanoRegistryClassDCodec.PairingModeRequest request =
                 NanoRegistryClassDCodec.PairingModeRequest
-                        .modernIos26_6Ultra2(
+                        .modernIos26_6(
                                 NanoRegistryClassDCodec
                                         .COMPATIBILITY_STATE_CONFIGURE);
         byte[] encoded =
@@ -51,7 +51,7 @@ public final class NanoRegistryClassDCodecTest {
             assertTrue(
                     decoded.hasAllVersionMetadata());
             assertTrue(
-                    decoded.matchesIos26_6Ultra2VersionTuple());
+                    decoded.matchesIos26_6VersionTuple());
             assertFalse(
                     decoded.response());
         } finally {
@@ -64,12 +64,12 @@ public final class NanoRegistryClassDCodecTest {
     public void ultra2FreshSetupStateVectorsCoverOptionalCheckAndNormal() {
         NanoRegistryClassDCodec.PairingModeRequest check =
                 NanoRegistryClassDCodec.PairingModeRequest
-                        .modernIos26_6Ultra2(
+                        .modernIos26_6(
                                 NanoRegistryClassDCodec
                                         .COMPATIBILITY_STATE_CHECK);
         NanoRegistryClassDCodec.PairingModeRequest normal =
                 NanoRegistryClassDCodec.PairingModeRequest
-                        .modernIos26_6Ultra2(
+                        .modernIos26_6(
                                 NanoRegistryClassDCodec
                                         .COMPATIBILITY_STATE_NORMAL);
         byte[] checkBytes =
@@ -387,7 +387,7 @@ public final class NanoRegistryClassDCodecTest {
     public void idsEnvelopePreservesTypeDirectionAndRuntimeFields() {
         NanoRegistryClassDCodec.PairingModeRequest request =
                 NanoRegistryClassDCodec.PairingModeRequest
-                        .modernIos26_6Ultra2(
+                        .modernIos26_6(
                                 3);
         IdsSocketPairCodec.ProtobufMessage envelope =
                 NanoRegistryClassDCodec.envelope(
@@ -542,7 +542,7 @@ public final class NanoRegistryClassDCodecTest {
                 5,
                 withUnknown.pairingMode);
         assertTrue(
-                withUnknown.matchesIos26_6Ultra2VersionTuple());
+                withUnknown.matchesIos26_6VersionTuple());
 
         NanoRegistryClassDCodec.GraduationRequest graduation =
                 NanoRegistryClassDCodec.decodeGraduationRequest(

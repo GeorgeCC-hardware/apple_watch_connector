@@ -1427,13 +1427,9 @@ final class HciCodec {
                     && setup.watchSetupData != null && setup.watchSetupData.length == 12
                     && setup.headerVersion == 1
                     && WatchSetupMetadataCodec
-                    .isUltra2NetworkRelayCandidate(
+                    .isNetworkRelayAdvertisement(
                             setup.decodedIdentifier,
-                            setup.decodedMetadata,
-                            NanoRegistryClassDCodec
-                                    .IOS_26_6_ULTRA2_PHONE_MIN_VERSION,
-                            NanoRegistryClassDCodec
-                                    .IOS_26_6_PHONE_MAX_VERSION)
+                            setup.decodedMetadata)
                     && eventType == 0
                     && (addressType == 0 || addressType == 1)
                     && rssi != 127

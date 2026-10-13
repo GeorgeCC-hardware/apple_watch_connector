@@ -1,6 +1,6 @@
-import '../l10n/strings.dart';
 import 'bluetooth_adapter.dart';
 import 'watch_features.dart';
+import 'watch_model_catalog.dart';
 
 final class DiscoveredWatch {
   final String token, productType, watchOs;
@@ -244,11 +244,6 @@ final class WatchConnectionState {
   String get modelName => nameForProduct(
     productType.isNotEmpty ? productType : discoveredProductType,
   );
-  static String nameForProduct(String product) => switch (product) {
-    'Watch7,5' => 'Apple Watch Ultra 2',
-    _ =>
-      product.isEmpty
-          ? Strings.current.appleWatch
-          : '${Strings.current.appleWatch} ($product)',
-  };
+  static String nameForProduct(String product) =>
+      WatchModelCatalog.nameForProduct(product);
 }

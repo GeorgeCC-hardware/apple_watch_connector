@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Event-driven Ultra 2 setup coordinator from the IsPaired boundary to Clock.
+ * Event-driven Watch setup coordinator from the IsPaired boundary to Clock.
  *
  * <p>The coordinator never owns a PIN, activation archive, HTTP body, IDS
  * identifier, or pairing key. It emits commands and consumes only bounded
@@ -1513,12 +1513,12 @@ final class AppleWatchPostCommitCoordinator {
             int value) {
         if (value
                 < NanoRegistryClassDCodec
-                .IOS_26_6_ULTRA2_PHONE_MIN_VERSION
+                .IOS_26_6_PHONE_MIN_VERSION
                 || value
                 > NanoRegistryClassDCodec
                 .IOS_26_6_PHONE_MAX_VERSION) {
             throw new IllegalArgumentException(
-                    "Ultra 2 runtime pairing version is incompatible");
+                    "Watch runtime pairing version is incompatible");
         }
     }
 
@@ -1693,7 +1693,7 @@ final class AppleWatchPostCommitCoordinator {
                         "Action is not a Class-D PairingMode Normal send");
             }
             return NanoRegistryClassDCodec.PairingModeRequest
-                    .modernIos26_6Ultra2(
+                    .modernIos26_6(
                             NanoRegistryClassDCodec
                                     .COMPATIBILITY_STATE_NORMAL,
                             runtimeWatchPairingVersion);
